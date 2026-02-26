@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>USX Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: 0 auto; background: #fafafa; }
+  .upload { text-align: center; padding: 40px; border: 2px dashed #ccc; border-radius: 8px; background: white; margin-bottom: 20px; }
+  .upload input { margin-top: 10px; }
+  .content { background: white; padding: 40px; border-radius: 8px; display: none; }
+  .book-title { font-size: 2em; margin-bottom: 10px; font-weight: bold; }
+  .chapter { font-size: 1.3em; margin: 30px 0 15px; font-weight: bold; color: #333; }
+  .section { font-style: italic; margin: 20px 0 10px; color: #555; }
+  .verse { margin-bottom: 10px; }
+  .verse-num { font-size: 0.7em; vertical-align: super; color: #999; font-weight: bold; margin-right: 3px; }
+  .italic { font-style: italic; }
+  .wj { color: #cc0000; }
+  .cross-ref { font-size: 0.85em; color: #777; margin: 4px 0 10px; font-style: italic; }
+  .footnotes { margin-top: 30px; padding-top: 15px; border-top: 1px solid #ddd; }
+  .footnotes-title { font-size: 0.85em; font-weight: bold; color: #888; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .footnote { font-size: 0.82em; color: #555; margin-bottom: 4px; padding-left: 10px; }
+</style>
+</head>
+<body>
+
+<div class="upload" id="upload">
+  <h2>USX File Viewer</h2>
+  <p>Select a .usx file to view</p>
+  <input type="file" id="fileInput" accept=".usx,.xml">
+</div>
+
+<div class="content" id="content"></div>
+
+<script>
+document.getElementById('fileInput').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(event) {
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(event.target.result, 'text/xml');
+    const book = xml.querySelector('book');
+    const bookName = book ? book.textContent : '';
+    let html = '<div class="book-title">' + bookName + '</div>';
+    const chapters = xml.querySelectorAll('chapter[sid]');
+    chapters.forEach(function(chap) {
+      const num = chap.getAttribute('number');
+      html += '<div class="chapter">Chapter ' + num + '</div>';
+      let footnotes = [];
+      let node = chap.nextSibling;
+      while (node && !(node.nodeType === 1 && node.tagName === 'chapter' && node.getAttribute('eid'))) {
+        if (node.nodeType === 1 && node.tagName === 'para') {
+          const style = node.getAttribute('style');
+          if (style === 's1') {
+            html += '<div class="section">' + getTextContent(node) + '</div>';
+          } else if (style === 'p' || style === 'q1') {
+            html += '<div class="verse">' + formatVerseContent(node) + '</div>';
+          } else if (style === 'r') {
+            html += '<div class="cross-ref">' + node.textContent.trim() + '</div>';
+          } else if (style === 'fn') {
+            footnotes.push(getTextContent(node));
+          }
+        }
+        node = node.nextSibling;
+      }
+      if (footnotes.length > 0) {
+        html += '<div class="footnotes"><div class="footnotes-title">Notes</div>';
+        footnotes.forEach(function(fn) { html += '<div class="footnote">' + fn + '</div>'; });
+        html += '</div>';
+      }
+    });
+    document.getElementById('content').innerHTML = html;
+    document.getElementById('content').style.display = 'block';
+    document.getElementById('upload').style.display = 'none';
+  };
+  reader.readAsText(file);
+});
+
+function renderChar(node) {
+  const style = node.getAttribute('style');
+  let inner = '';
+  for (let child of node.childNodes) {
+    if (child.nodeType === 3) inner += child.textContent;
+    else if (child.nodeType === 1 && child.tagName === 'char') inner += renderChar(child);
+    else if (child.nodeType === 1) inner += child.textContent;
+  }
+  if (style === 'wj') return '<span class="wj">' + inner + '</span>';
+  if (style === 'it') return '<span class="italic">' + inner + '</span>';
+  return inner;
+}
+
+function getTextContent(node) {
+  let text = '';
+  for (let child of node.childNodes) {
+    if (child.nodeType === 3) text += child.textContent;
+    else if (child.nodeType === 1 && child.tagName === 'char') text += renderChar(child);
+    else if (child.nodeType === 1) text += child.textContent;
+  }
+  return text;
+}
+
+function formatVerseContent(para) {
+  let html = '';
+  for (let child of para.childNodes) {
+    if (child.nodeType === 3) {
+      html += child.textContent;
+    } else if (child.nodeType === 1) {
+      if (child.tagName === 'verse' && child.getAttribute('number')) {
+        html += '<sup class="verse-num">' + child.getAttribute('number') + '</sup>';
+      } else if (child.tagName === 'char') {
+        html += renderChar(child);
+      }
+    }
+  }
+  return html;
+}
+</script>
+</body>
+</html>
